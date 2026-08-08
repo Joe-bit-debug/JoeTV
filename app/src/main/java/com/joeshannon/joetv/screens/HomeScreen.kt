@@ -16,6 +16,7 @@ package com.joeshannon.joetv.screens
 
 
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -37,6 +38,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,6 +90,15 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import android.content.ActivityNotFoundException
+import android.net.Uri
+import android.provider.Settings
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+
 
 
 /**
@@ -108,6 +120,23 @@ data class JoeTvApp(
  */
 @Composable
 fun HomeScreen(context: Context) {
+
+    var calendarPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_CALENDAR
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val calendarPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            calendarPermissionGranted = granted
+        }
+
 
     // Create the manager responsible for discovering installed apps.
     val appManager = remember(context.applicationContext) {
@@ -304,6 +333,13 @@ fun HomeScreen(context: Context) {
         ) {
             item {
                 JoeTvHero(
+                    context = context,
+                    calendarPermissionGranted = calendarPermissionGranted,
+                    onRequestCalendarPermission = {
+                        calendarPermissionLauncher.launch(
+                            Manifest.permission.READ_CALENDAR
+                        )
+                    }
                 )
             }
 
@@ -695,15 +731,44 @@ private suspend fun loadWeather(): WeatherInfo? = withContext(Dispatchers.IO) {
 
 
 /**
- * Displays the main hero banner including greeting,
- * time, date, and live weather.
+ * Chooses a hero layout based on the active display aspect ratio.
+ *
+ * Native Tab S9+ landscape is approximately 16:10.
+ * JoeTV TV mode is forced to 1920x1080, which is 16:9.
  */
 @Composable
-private fun JoeTvHero() {
-    var focused by remember {
-        mutableStateOf(false)
-    }
+private fun JoeTvHero(
+    context: Context,
+    calendarPermissionGranted: Boolean,
+    onRequestCalendarPermission: () -> Unit
+) {
+    val configuration = LocalConfiguration.current
 
+    val screenWidth = configuration.screenWidthDp.coerceAtLeast(1)
+    val screenHeight = configuration.screenHeightDp.coerceAtLeast(1)
+    val aspectRatio = screenWidth.toFloat() / screenHeight.toFloat()
+
+    val isTvLayout =
+        configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                aspectRatio >= 1.59f
+
+    if (isTvLayout) {
+        JoeTvHeroTv(
+            context = context,
+            calendarPermissionGranted = calendarPermissionGranted,
+            onRequestCalendarPermission = onRequestCalendarPermission
+        )
+    } else {
+        JoeTvHeroTablet()
+    }
+}
+
+
+/**
+ * Shared time and weather state used by both hero layouts.
+ */
+@Composable
+private fun rememberHeroState(): Triple<LocalDateTime, WeatherInfo?, String> {
     var currentTime by remember {
         mutableStateOf(LocalDateTime.now())
     }
@@ -722,6 +787,40 @@ private fun JoeTvHero() {
         }
     }
 
+    val greeting = when (currentTime.hour) {
+        in 5..11 -> "Good morning, Joe"
+        in 12..16 -> "Good afternoon, Joe"
+        else -> "Good evening, Joe"
+    }
+
+    return Triple(currentTime, weather, greeting)
+}
+
+
+/**
+ * Compact 16:9 hero used when JoeTV is running at 1920x1080.
+ */
+@Composable
+private fun JoeTvHeroTv(
+    context: Context,
+    calendarPermissionGranted: Boolean,
+    onRequestCalendarPermission: () -> Unit
+) {
+    var focused by remember {
+        mutableStateOf(false)
+    }
+
+    val (currentTime, weather, greeting) = rememberHeroState()
+
+    val nextEvent by produceState<JoeTvCalendarEvent?>(
+        initialValue = null,
+        key1 = calendarPermissionGranted
+    ) {
+        if (calendarPermissionGranted) {
+            value = loadNextCalendarEvent(context)
+        }
+    }
+
     val timeText = currentTime.format(
         DateTimeFormatter.ofPattern("h:mm a")
     )
@@ -730,11 +829,285 @@ private fun JoeTvHero() {
         DateTimeFormatter.ofPattern("EEEE, MMMM d")
     )
 
-    val greeting = when (currentTime.hour) {
-        in 5..11 -> "Good morning, Joe"
-        in 12..16 -> "Good afternoon, Joe"
-        else -> "Good evening, Joe"
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(218.dp)
+            .padding(
+                start = 38.dp,
+                end = 38.dp,
+                top = 18.dp,
+                bottom = 12.dp
+            )
+            .clip(RoundedCornerShape(26.dp))
+            .background(
+                Brush.horizontalGradient(
+                    colors = listOf(
+                        Color(0xF026324A),
+                        Color(0xDD161C2A),
+                        Color(0xC010141E)
+                    )
+                )
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) {
+                    Color.White.copy(alpha = 0.70f)
+                } else {
+                    Color.White.copy(alpha = 0.10f)
+                },
+                shape = RoundedCornerShape(26.dp)
+            )
+            .onFocusChanged {
+                focused = it.isFocused
+            }
+            .focusable()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = 28.dp,
+                    end = 20.dp,
+                    top = 18.dp,
+                    bottom = 18.dp
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1.35f)
+            ) {
+                Text(
+                    text = "JOETV",
+                    color = Color(0xFF8CB8FF),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 3.sp
+                )
+
+                Spacer(modifier = Modifier.height(7.dp))
+
+                Text(
+                    text = greeting,
+                    color = Color.White,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = "Everything you want to watch, all in one place.",
+                    color = Color.White.copy(alpha = 0.68f),
+                    fontSize = 13.sp,
+                    maxLines = 1
+                )
+
+                Spacer(modifier = Modifier.height(15.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HeroPill(
+                        text = timeText,
+                        compact = true
+                    )
+
+                    HeroPill(
+                        text = dateText,
+                        compact = true
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            CalendarHeroCard(
+                event = nextEvent,
+                permissionGranted = calendarPermissionGranted,
+                modifier = Modifier.width(175.dp),
+                onClick = {
+                    if (!calendarPermissionGranted) {
+                        onRequestCalendarPermission()
+                    }
+                }
+            )
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            WeatherHeroCard(
+                weather = weather,
+                cardWidth = 210.dp,
+                cardHeight = 135.dp,
+                temperatureFontSize = 29.sp,
+                conditionFontSize = 11.sp,
+                detailsFontSize = 9.sp,
+                cornerRadius = 22.dp
+            )
+        }
     }
+}
+
+
+/**
+ * Calendar preview shown in the TV hero.
+ *
+ * This currently displays a connection placeholder. The visual card is ready
+ * for Google Calendar data once sign-in and API access are added.
+ */
+@Composable
+private fun CalendarHeroCard(
+    event: JoeTvCalendarEvent?,
+    permissionGranted: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    var focused by remember {
+        mutableStateOf(false)
+    }
+
+    val eventTime = event?.let {
+        java.time.Instant
+            .ofEpochMilli(it.startTimeMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("h:mm a"))
+    }
+
+    val countdown = event?.let {
+        val minutes =
+            ((it.startTimeMillis - System.currentTimeMillis()) / 60_000L)
+                .coerceAtLeast(0)
+
+        when {
+            minutes == 0L -> "Starting now"
+            minutes < 60L -> "Starts in $minutes min"
+            else -> {
+                val hours = minutes / 60
+                val remainingMinutes = minutes % 60
+
+                if (remainingMinutes == 0L) {
+                    "Starts in $hours hr"
+                } else {
+                    "Starts in ${hours}h ${remainingMinutes}m"
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .height(135.dp)
+            .graphicsLayer {
+                val scale = if (focused) 1.03f else 1f
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(22.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF253755),
+                        Color(0xFF18243A)
+                    )
+                )
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) {
+                    Color.White.copy(alpha = 0.85f)
+                } else {
+                    Color.White.copy(alpha = 0.14f)
+                },
+                shape = RoundedCornerShape(22.dp)
+            )
+            .onFocusChanged {
+                focused = it.isFocused
+            }
+            .focusable()
+            .clickable {
+                onClick()
+            }
+            .padding(
+                horizontal = 16.dp,
+                vertical = 14.dp
+            )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "NEXT UP",
+                color = Color(0xFF8CB8FF),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.6.sp
+            )
+
+            Column {
+                Text(
+                    text = when {
+                        !permissionGranted -> "Calendar"
+                        event != null -> event.title
+                        else -> "Nothing scheduled"
+                    },
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = when {
+                        !permissionGranted -> "Permission required"
+                        event != null -> eventTime.orEmpty()
+                        else -> "You're all caught up"
+                    },
+                    color = Color.White.copy(alpha = 0.62f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Text(
+                text = when {
+                    !permissionGranted -> "Press OK to connect"
+                    event != null -> countdown.orEmpty()
+                    else -> "Enjoy your day"
+                },
+                color = Color.White.copy(alpha = 0.46f),
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+
+/**
+ * Original spacious hero used at the tablet's native aspect ratio.
+ */
+@Composable
+private fun JoeTvHeroTablet() {
+    var focused by remember {
+        mutableStateOf(false)
+    }
+
+    val (currentTime, weather, greeting) = rememberHeroState()
+
+    val timeText = currentTime.format(
+        DateTimeFormatter.ofPattern("h:mm a")
+    )
+
+    val dateText = currentTime.format(
+        DateTimeFormatter.ofPattern("EEEE, MMMM d")
+    )
 
     Box(
         modifier = Modifier
@@ -835,7 +1208,13 @@ private fun JoeTvHero() {
 @Composable
 private fun WeatherHeroCard(
     weather: WeatherInfo?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cardWidth: androidx.compose.ui.unit.Dp = 320.dp,
+    cardHeight: androidx.compose.ui.unit.Dp = 210.dp,
+    temperatureFontSize: androidx.compose.ui.unit.TextUnit = 42.sp,
+    conditionFontSize: androidx.compose.ui.unit.TextUnit = 15.sp,
+    detailsFontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
+    cornerRadius: androidx.compose.ui.unit.Dp = 30.dp
 ) {
     val scene = weather?.let {
         weatherSceneFor(it.weatherCode)
@@ -870,17 +1249,17 @@ private fun WeatherHeroCard(
     Box(
         modifier = modifier
             .size(
-                width = 320.dp,
-                height = 210.dp
+                width = cardWidth,
+                height = cardHeight
             )
-            .clip(RoundedCornerShape(30.dp))
+            .clip(RoundedCornerShape(cornerRadius))
             .background(
                 Brush.linearGradient(cardColors)
             )
             .border(
                 width = 1.dp,
                 color = Color.White.copy(alpha = 0.18f),
-                shape = RoundedCornerShape(30.dp)
+                shape = RoundedCornerShape(cornerRadius)
             )
     ) {
         WeatherIllustration(
@@ -900,7 +1279,7 @@ private fun WeatherHeroCard(
             Text(
                 text = weather?.let { "${it.temperature}°" } ?: "--°",
                 color = Color.White,
-                fontSize = 42.sp,
+                fontSize = temperatureFontSize,
                 fontWeight = FontWeight.Bold
             )
 
@@ -909,7 +1288,7 @@ private fun WeatherHeroCard(
                     weatherLabel(scene)
                 } ?: "Loading weather",
                 color = Color.White.copy(alpha = 0.88f),
-                fontSize = 15.sp,
+                fontSize = conditionFontSize,
                 fontWeight = FontWeight.SemiBold
             )
 
@@ -919,7 +1298,7 @@ private fun WeatherHeroCard(
                 Text(
                     text = "H ${weather.high}°  •  L ${weather.low}°",
                     color = Color.White.copy(alpha = 0.66f),
-                    fontSize = 12.sp
+                    fontSize = detailsFontSize
                 )
             }
         }
@@ -1200,7 +1579,10 @@ private fun cardBackgroundApprox(
 }
 
 @Composable
-private fun HeroPill(text: String) {
+private fun HeroPill(
+    text: String,
+    compact: Boolean = false
+) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
@@ -1211,14 +1593,14 @@ private fun HeroPill(text: String) {
                 shape = RoundedCornerShape(50)
             )
             .padding(
-                horizontal = 14.dp,
-                vertical = 8.dp
+                horizontal = if (compact) 10.dp else 14.dp,
+                vertical = if (compact) 6.dp else 8.dp
             )
     ) {
         Text(
             text = text,
             color = Color.White.copy(alpha = 0.80f),
-            fontSize = 13.sp
+            fontSize = if (compact) 11.sp else 13.sp
         )
     }
 }
@@ -1686,5 +2068,57 @@ private fun launchApp(
     launchIntent?.let { intent ->
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
+    }
+}
+
+private fun openBluetoothSettings(context: Context) {
+    try {
+        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        context.startActivity(intent)
+    } catch (exception: ActivityNotFoundException) {
+        val fallbackIntent = Intent(Settings.ACTION_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        context.startActivity(fallbackIntent)
+    }
+}
+
+private fun openSoundAssistant(context: Context) {
+    val packageName = "com.samsung.android.soundassistant"
+
+    val launchIntent =
+        context.packageManager.getLaunchIntentForPackage(packageName)
+
+    if (launchIntent != null) {
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(launchIntent)
+    } else {
+        try {
+            // Opens Sound Assistant in the Samsung Galaxy Store
+            val storeIntent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("samsungapps://ProductDetail/$packageName")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.startActivity(storeIntent)
+        } catch (exception: ActivityNotFoundException) {
+            // Final fallback: open the Galaxy Store web listing
+            val browserIntent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(
+                    "https://galaxystore.samsung.com/detail/$packageName"
+                )
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.startActivity(browserIntent)
+        }
     }
 }
