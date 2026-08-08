@@ -1,20 +1,23 @@
 # JoeTV
+![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF?logo=kotlin&logoColor=white)
+![Android TV](https://img.shields.io/badge/Platform-Android%20TV-3DDC84?logo=android&logoColor=white)
+![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
 
 JoeTV is a custom Android TV launcher I built using Kotlin and Jetpack Compose.
 
-I started this project because I wanted to learn Android development by building something I'd actually use instead of following tutorials. The goal was to create a cleaner, faster home screen for Android TV while learning more about UI design, state management, APIs, and Android's application framework.
+I started this project because I wanted to learn Android development by building something I would actually use instead of following tutorials. My goal was to create a cleaner, faster home screen for Android TV while learning more about UI design, state management, APIs, and Android's application framework.
 
 ## Features
 
-- Custom Android TV home screen
-- Live weather using the Open-Meteo API
+- Modern Android TV home screen
+- Live weather powered by the Open-Meteo API
 - Dynamic greeting with the current time and date
 - Favorites and recently opened apps
-- Hide and restore apps
+- Hide and restore applications
 - Automatic installed app discovery
-- Controller-friendly navigation
-- Animated background and weather graphics
-- Custom navigation sound effects
+- TV remote-friendly navigation
+- Animated backgrounds and weather graphics
+- Custom UI sound effects
 
 ## Built With
 
@@ -27,29 +30,39 @@ I started this project because I wanted to learn Android development by building
 
 ## Why I Built It
 
-As a Management Information Systems student, I wanted a project that would push me outside of the classroom and give me experience building a real application from start to finish.
+As a Management Information Systems student with a Computer Science minor, I wanted to challenge myself by building a complete application from the ground up.
 
-Working on JoeTV helped me learn how to organize a larger codebase, work with Android APIs, manage application state, and design interfaces that feel responsive on a TV.
+JoeTV gave me hands-on experience with Android development, UI design, state management, REST APIs, and organizing a larger codebase. It has been one of the most rewarding projects I've worked on and continues to evolve as I learn new technologies.
 
 ## Screenshots
 
-*(Coming soon)*
+### Home Screen
+
+<p align="center">
+  <img src="Screenshots/home.png" width="90%">
+</p>
+
+### Running on an Android Tablet
+
+<p align="center">
+  <img src="Screenshots/tablet.jpg" width="90%">
+</p>
 
 ## Future Improvements
 
-There are still a lot of things I'd like to add, including:
+Some features I'd like to add in future versions include:
 
 - Voice search
-- Better media integration
+- Continue Watching integration
+- Multiple user profiles
 - Custom themes
-- User profiles
 - Performance improvements
-- More customization options
+- Additional customization options
 
 ## Author
 
 **Joe Shannon**
 
 Management Information Systems  
-Computer Science Minor
+Computer Science Minor  
 Kansas State University
